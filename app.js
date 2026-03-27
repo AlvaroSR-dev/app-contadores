@@ -8,7 +8,9 @@ import {
   GoogleAuthProvider,
   OAuthProvider,
   signOut,
-  onAuthStateChanged
+  onAuthStateChanged,
+  setPersistence,
+  browserLocalPersistence
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 import {
@@ -47,6 +49,9 @@ let currentPartyId = null;
 const googleProvider = new GoogleAuthProvider();
 const appleProvider = new OAuthProvider('apple.com');
 
+// 🚀 SET PERSISTENCE (CRITICAL)
+await setPersistence(auth, browserLocalPersistence);
+
 // 🚀 LOGIN (REDIRECT)
 window.loginGoogle = async () => {
   await signInWithRedirect(auth, googleProvider);
@@ -64,18 +69,25 @@ window.loginApple = async () => {
 // 🚪 LOGOUT
 window.logout = () => signOut(auth);
 
-// 🔁 HANDLE REDIRECT RESULT
-getRedirectResult(auth)
-  .then((result) => {
-    if (result) {
-      console.log("✅ Redirect login success:", result.user);
-    }
-  })
-  .catch((error) => {
-    console.error("❌ Redirect error:", error);
-  });
+// 🧠 UI HELPERS
+function showApp(user) {
+  document.getElementById("auth-section").style.display = "none";
+  document.getElementById("app-section").style.display = "block";
 
-// 🔄 AUTH STATE
+  document.getElementById("user-info").innerHTML = `
+    <img src="${user.photoURL}" width="40" class="rounded-circle me-2">
+    <strong>${user.displayName}</strong>
+  `;
+
+  loadParties();
+}
+
+function showLogin() {
+  document.getElementById("auth-section").style.display = "block";
+  document.getElementById("app-section").style.display = "none";
+}
+
+// 🔁 HANDLE REDIRECT RESULT + AUTH STATE (FIXED)
 onAuthStateChanged(auth, async (user) => {
   if (user) {
     currentUser = user;
@@ -87,26 +99,38 @@ onAuthStateChanged(auth, async (user) => {
       photo: user.photoURL
     }, { merge: true });
 
-    // UI update
-    document.getElementById("auth-section").style.display = "none";
-    document.getElementById("app-section").style.display = "block";
-
-    document.getElementById("user-info").innerHTML = `
-      <img src="${user.photoURL}" width="40" class="rounded-circle me-2">
-      <strong>${user.displayName}</strong>
-    `;
-
-    loadParties();
+    showApp(user);
 
   } else {
-    document.getElementById("auth-section").style.display = "block";
-    document.getElementById("app-section").style.display = "none";
+    // 🔥 Wait for redirect result BEFORE showing login
+    try {
+      const result = await getRedirectResult(auth);
+
+      if (result && result.user) {
+        currentUser = result.user;
+
+        await setDoc(doc(db, "users", result.user.uid), {
+          email: result.user.email,
+          name: result.user.displayName,
+          photo: result.user.photoURL
+        }, { merge: true });
+
+        showApp(result.user);
+        return;
+      }
+    } catch (error) {
+      console.error("Redirect error:", error);
+    }
+
+    showLogin();
   }
 });
 
 // 🎉 CREATE PARTY
 window.createParty = async () => {
   const title = document.getElementById("party-title").value;
+  if (!title) return alert("Enter party name");
+
   const joinCode = Math.random().toString(36).substring(2, 8);
 
   await addDoc(collection(db, "parties"), {
