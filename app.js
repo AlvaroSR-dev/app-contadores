@@ -1,10 +1,10 @@
-// replace ALL firebase imports with this:
-
+// 🔥 Firebase imports
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 
 import {
   getAuth,
-  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   GoogleAuthProvider,
   OAuthProvider,
   signOut,
@@ -35,7 +35,7 @@ const firebaseConfig = {
   appId: "1:622484552011:web:bd4543c4e7b2837c6c10ce"
 };
 
-// INIT
+// 🔧 INIT
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
@@ -43,34 +43,51 @@ const db = getFirestore(app);
 let currentUser = null;
 let currentPartyId = null;
 
-// 🔐 AUTH PROVIDERS
+// 🔐 PROVIDERS
 const googleProvider = new GoogleAuthProvider();
 const appleProvider = new OAuthProvider('apple.com');
 
-// LOGIN
+// 🚀 LOGIN (REDIRECT)
 window.loginGoogle = async () => {
-  await signInWithPopup(auth, googleProvider);
+  await signInWithRedirect(auth, googleProvider);
 };
 
 window.loginApple = async () => {
-  await signInWithPopup(auth, appleProvider);
+  try {
+    await signInWithRedirect(auth, appleProvider);
+  } catch (error) {
+    console.error(error);
+    alert("Apple login not configured yet.");
+  }
 };
 
-// LOGOUT
+// 🚪 LOGOUT
 window.logout = () => signOut(auth);
 
-// AUTH STATE
+// 🔁 HANDLE REDIRECT RESULT
+getRedirectResult(auth)
+  .then((result) => {
+    if (result) {
+      console.log("✅ Redirect login success:", result.user);
+    }
+  })
+  .catch((error) => {
+    console.error("❌ Redirect error:", error);
+  });
+
+// 🔄 AUTH STATE
 onAuthStateChanged(auth, async (user) => {
   if (user) {
     currentUser = user;
 
-    // Save user
+    // 💾 Save user in Firestore
     await setDoc(doc(db, "users", user.uid), {
       email: user.email,
       name: user.displayName,
       photo: user.photoURL
     }, { merge: true });
 
+    // UI update
     document.getElementById("auth-section").style.display = "none";
     document.getElementById("app-section").style.display = "block";
 
@@ -107,6 +124,11 @@ window.joinParty = async () => {
 
   const q = query(collection(db, "parties"), where("joinCode", "==", code));
   const snapshot = await getDocs(q);
+
+  if (snapshot.empty) {
+    alert("Invalid code");
+    return;
+  }
 
   snapshot.forEach(async (docSnap) => {
     const ref = doc(db, "parties", docSnap.id);
@@ -155,6 +177,11 @@ window.openParty = (partyId, title) => {
 window.addCounter = async () => {
   const title = document.getElementById("counter-title").value;
   const emoji = document.getElementById("counter-emoji").value;
+
+  if (!title || !emoji) {
+    alert("Fill all fields");
+    return;
+  }
 
   await addDoc(collection(db, "parties", currentPartyId, "counters"), {
     title,
